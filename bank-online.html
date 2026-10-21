@@ -135,6 +135,39 @@ async function scanInput(){const input=$('scan'),code=input.value.trim();input.v
 function readLocal(){const raw=localStorage.getItem('socialcoin_bank_proto_v1');if(!raw)throw Error('이 브라우저에서 기존 데이터가 발견되지 않았습니다. 기존 교사 PC에서 열어 주세요.');const parsed=JSON.parse(raw);if(!Array.isArray(parsed.students)||!Array.isArray(parsed.transactions))throw Error('기존 데이터 형태가 올바르지 않습니다.');return parsed}
 function saveBlob(content,filename){const a=document.createElement('a'),u=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));a.href=u;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 function exportBackup(){try{const db=readLocal();saveBlob(JSON.stringify(db,null,2),'사회코인_원본백업_'+new Date().toISOString().slice(0,10)+'.json');$('importInfo').textContent='원본 백업을 내려받았습니다. 삭제하거나 수정하지 말고 보관하세요.';}catch(e){$('importInfo').textContent=e.message}}
-function previewImport(){try{const db=readLocal();localSnapshot=db;const notSix=db.students.filter(s=>!/^\d{6}$/.test(String(s.pin||''))).length;const invalid=db.students.filter(s=>!/^\d{8}$/.test(String(s.scanCode||''))).length;$('importInfo').textContent='학생 '+db.students.length+'명, 거래 '+db.transactions.length+'건을 발견했습니다. 비밀번호 형식 오류 '+notSix+'명, 바코드 형식 오류 '+invalid+'명. 백업 후 이전하세요.'}catch(e){$('importInfo').textContent=e.message}}
+let uploadedBackup=null;
+async function loadBackupFile(file){
+ if(!file){uploadedBackup=null;localSnapshot=null;return}
+ if(file.size>15*1024*1024){$('importInfo').textContent='백업 파일은 15MB 이하로 선택해 주세요.';return}
+ try{
+  const db=JSON.parse(await file.text());
+  validateBackup(db);
+  uploadedBackup=db;localSnapshot=null;
+  $('importInfo').textContent='백업 파일을 읽었습니다. 이전 기록 점검 버튼을 눌러 학생 수와 거래 내역을 확인해 주세요. 아직 서버로 전송되지 않았습니다.';
+ }catch(e){uploadedBackup=null;localSnapshot=null;$('importInfo').textContent='백업 오류: '+e.message}
+}
+function validateBackup(db){
+ if(!db||!Array.isArray(db.students)||!Array.isArray(db.transactions))throw Error('사회코인 BANK 백업 JSON 형식이 아닙니다.');
+ if(db.students.length>2000||db.transactions.length>300000)throw Error('데이터가 지원 크기를 넘었습니다.');
+ const keys=new Set();
+ for(const s of db.students){
+  if(!s||typeof s.id!=='string'||!s.id||keys.has(s.id))throw Error('학생 ID가 없거나 중복되었습니다.');
+  keys.add(s.id);
+ }
+ for(const t of db.transactions){
+  if(!t||!keys.has(t.studentId)||!Number.isSafeInteger(t.amount)||t.amount===0)throw Error('기록과 학생 ID가 일치하지 않습니다.');
+ }
+}
+function previewImport(){
+ try{
+  const db=uploadedBackup||readLocal();
+  validateBackup(db);
+  localSnapshot=JSON.parse(JSON.stringify(db));
+  const pinErrors=db.students.filter(s=>!/^\d{6}$/.test(String(s.pin||''))).length;
+  const scanErrors=db.students.filter(s=>!/^\d{8}$/.test(String(s.scanCode||''))).length;
+  const balanceErrors=db.students.filter(s=>!Number.isSafeInteger(Number(s.balance))||Number(s.balance)<0).length;
+  $('importInfo').textContent='학생 '+db.students.length+'명, 거래 '+db.transactions.length+'건. 조회번호 형식 오류 '+pinErrors+'명, 스캔코드 오류 '+scanErrors+'명, 잔액 오류 '+balanceErrors+'명. \n학생 수와 잔액을 확인하고 JSON 원본 파일을 안전하게 보관한 후 이전을 누르세요. 서버 이전 후 개인 조회번호는 교사가 다시 발급할 수 있습니다.';
+ }catch(e){localSnapshot=null;$('importInfo').textContent='점검 실패: '+e.message}
+}
 async function startImport(){if(!localSnapshot){$('importInfo').textContent='먼저 이전 기록 점검을 누르세요.';return}if(!confirm('기존 데이터 백업을 받으셨나요? 학생 '+localSnapshot.students.length+'명을 서버로 복사합니다. 기존 브라우저 데이터는 삭제하지 않습니다.'))return;let created=0,skipped=0,failed=0;const records=localSnapshot.students;for(let i=0;i<records.length;i++){const s=records[i],t=localSnapshot.transactions.filter(x=>x.studentId===s.id);try{const r=await callTeacher({action:'import',year:Number($('year').value),students:[{...s,transactions:t}]});if(r.status==='created')created++;else skipped++}catch(e){failed++;$('importInfo').textContent='이전 중 ('+(i+1)+'/'+records.length+'): '+e.message}if(failed===0||i%5===0)$('importInfo').textContent='진행 '+(i+1)+'/'+records.length+' · 신규 '+created+' · 중복 '+skipped+' · 실패 '+failed}await loadStudents();$('importInfo').textContent+='\n완료. 원본 데이터는 보존되었습니다. 실패 항목이 있으면 원인을 확인한 후 재시도하세요.'}
 </script></body></html>
