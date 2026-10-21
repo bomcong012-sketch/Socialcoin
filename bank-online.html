@@ -112,6 +112,7 @@ function printIssued(){
  w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>개인 조회번호 안내지</title><style>body{font:15px Malgun Gothic,sans-serif;margin:20px;display:grid;grid-template-columns:1fr 1fr;gap:13px}.slip{border:1px dashed #888;padding:16px;break-inside:avoid}.number{font-size:30px;letter-spacing:5px;font-weight:bold;color:#176e63}small{font-size:11px;color:#666}@media print{@page{size:A4;margin:12mm}}</style></head><body>'+rows+'</body></html>');
  w.document.close();
  w.focus();
+ w.setTimeout(()=>w.print(),350);
 }
 
 async function pay(studentId){const amt=Number($('amount').value),s=students.find(x=>x.id===studentId);if(!s)return;const requestId=crypto.randomUUID();try{const r=await callTeacher({action:'transaction',student_id:studentId,amount:amt,reason:$('reason').value.trim(),request_id:requestId});$('teacherStatus').textContent=s.display_name+' '+(amt>0?'+':'')+amt+'코인 · 잔액 '+r.after;await loadStudents();}catch(e){$('teacherStatus').textContent='거래 실패: '+e.message}}
